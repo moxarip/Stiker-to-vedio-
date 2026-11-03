@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">StickerVideo Studio</string>
+    <string name="tab_stickers">ملصقات واتساب</string>
+    <string name="tab_studio">استوديو الفيديو</string>
+    <string name="tab_exports">الفيديوهات</string>
+    <string name="tab_debug_apk">نسخة Debug APK</string>
+    <string name="select_whatsapp_folder">ربط مجلد ملصقات واتساب</string>
+    <string name="pick_any_stickers">إضافة أي ملصق أو صورة</string>
+    <string name="convert_to_video">تحويل إلى فيديو MP4</string>
+    <string name="share_video">مشاركة الفيديو</string>
+    <string name="save_to_gallery">حفظ في المعرض</string>
+</resources>

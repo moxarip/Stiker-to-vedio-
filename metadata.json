@@ -1,0 +1,6 @@
+{
+  "name": "StickerVideo Studio",
+  "description": "تطبيق احترافي لتحويل ملصقات واتساب وأي ملصقات (WebP/GIF/PNG) إلى فيديو MP4 مع استعراض مجلد ملصقات واتساب مباشرة وتأثيرات حركية متقدمة",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
