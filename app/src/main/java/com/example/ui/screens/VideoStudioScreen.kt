@@ -1,6 +1,10 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Canvas
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Color as AndroidColor
+import android.graphics.PorterDuff
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,11 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,13 +57,12 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -83,6 +84,7 @@ import com.example.ui.theme.WhatsAppNeonGreen
 import com.example.video.LoadedStickerAsset
 import com.example.video.StickerVideoEncoder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
@@ -102,27 +104,48 @@ fun VideoStudioScreen(
     var isPreviewPlaying by remember { mutableStateOf(true) }
     var previewTimeSec by remember { mutableFloatStateOf(0f) }
 
-    // Load selected sticker bitmaps/movies whenever selection changes
+    // Load selected sticker bitmaps safely on IO thread
     LaunchedEffect(selectedStickers) {
         loadedAssets = withContext(Dispatchers.IO) {
             selectedStickers.mapNotNull { StickerVideoEncoder.loadStickerAsset(context, it) }
         }
     }
 
-    // 60fps animation clock for live preview canvas
-    LaunchedEffect(isPreviewPlaying, config.durationSeconds) {
-        if (!isPreviewPlaying) return@LaunchedEffect
-        var lastNanos = 0L
+    // Smooth 30fps preview loop using delay(33L) so tests and UI never block or hang waitForIdle()
+    LaunchedEffect(isPreviewPlaying, config.durationSeconds, uiState.isEncodingVideo) {
+        if (!isPreviewPlaying || uiState.isEncodingVideo) return@LaunchedEffect
         while (isActive) {
-            withFrameNanos { frameNanos ->
-                if (lastNanos != 0L) {
-                    val deltaSec = (frameNanos - lastNanos) / 1_000_000_000f
-                    val totalDur = config.durationSeconds.coerceAtLeast(1).toFloat()
-                    previewTimeSec = (previewTimeSec + deltaSec) % totalDur
-                }
-                lastNanos = frameNanos
-            }
+            delay(33L)
+            val totalDur = config.durationSeconds.coerceAtLeast(1).toFloat()
+            previewTimeSec = (previewTimeSec + 0.033f) % totalDur
         }
+    }
+
+    // Reuse a single offscreen software Bitmap per aspect ratio to avoid per-frame allocations
+    val offscreenBuffer = remember(config.aspectRatio) {
+        val previewW = (config.aspectRatio.widthPx / 2).coerceAtLeast(240)
+        val previewH = (config.aspectRatio.heightPx / 2).coerceAtLeast(240)
+        Bitmap.createBitmap(previewW, previewH, Bitmap.Config.ARGB_8888)
+    }
+
+    val previewBitmap = remember(
+        offscreenBuffer,
+        loadedAssets,
+        config,
+        previewTimeSec
+    ) {
+        val softCanvas = AndroidCanvas(offscreenBuffer)
+        softCanvas.drawColor(AndroidColor.BLACK, PorterDuff.Mode.CLEAR)
+        StickerVideoEncoder.drawStudioFrame(
+            canvas = softCanvas,
+            width = offscreenBuffer.width,
+            height = offscreenBuffer.height,
+            assets = loadedAssets,
+            config = config,
+            timeSeconds = previewTimeSec,
+            totalDurationSeconds = config.durationSeconds.toFloat()
+        )
+        offscreenBuffer.asImageBitmap()
     }
 
     Column(
@@ -133,7 +156,7 @@ fun VideoStudioScreen(
             .testTag("video_studio_screen"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Live Interactive Studio Canvas Preview Card
+        // 1. Live Interactive Studio Preview Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -196,32 +219,23 @@ fun VideoStudioScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                val previewRatio = config.aspectRatio.widthPx.toFloat() / config.aspectRatio.heightPx.toFloat()
                 Box(
                     modifier = Modifier
-                        .heightIn(max = 290.dp)
-                        .aspectRatio(previewRatio)
+                        .fillMaxWidth()
+                        .height(260.dp)
                         .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0xFF060D10))
                         .border(1.5.dp, WhatsAppNeonGreen.copy(alpha = 0.45f), RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Canvas(
+                    Image(
+                        bitmap = previewBitmap,
+                        contentDescription = "معاينة الفيديو",
                         modifier = Modifier
                             .fillMaxSize()
-                            .testTag("studio_preview_canvas")
-                    ) {
-                        val canvasWidth = size.width.toInt().coerceAtLeast(1)
-                        val canvasHeight = size.height.toInt().coerceAtLeast(1)
-                        StickerVideoEncoder.drawStudioFrame(
-                            canvas = drawContext.canvas.nativeCanvas,
-                            width = canvasWidth,
-                            height = canvasHeight,
-                            assets = loadedAssets,
-                            config = config,
-                            timeSeconds = previewTimeSec,
-                            totalDurationSeconds = config.durationSeconds.toFloat()
-                        )
-                    }
+                            .testTag("studio_preview_canvas"),
+                        contentScale = ContentScale.Fit
+                    )
                 }
             }
         }
@@ -294,7 +308,9 @@ fun VideoStudioScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 VideoAspectRatio.entries.forEach { ratio ->
@@ -302,23 +318,11 @@ fun VideoStudioScreen(
                     FilterChip(
                         selected = selected,
                         onClick = { onUpdateConfig { it.copy(aspectRatio = ratio) } },
-                        modifier = Modifier.weight(1f),
                         label = {
-                            Column(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = ratio.badgeText,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = ratio.titleAr,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1
-                                )
-                            }
+                            Text(
+                                text = "${ratio.badgeText} • ${ratio.titleAr}",
+                                style = MaterialTheme.typography.labelLarge
+                            )
                         },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = WhatsAppEmerald,
@@ -627,7 +631,6 @@ private fun SelectedStickersStripCard(
                             .padding(8.dp),
                         contentScale = ContentScale.Fit
                     )
-                    // Sequence badge
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
@@ -643,7 +646,6 @@ private fun SelectedStickersStripCard(
                             color = Color.White
                         )
                     }
-                    // Remove button if more than 1
                     if (stickers.size > 1) {
                         Box(
                             modifier = Modifier

@@ -233,8 +233,8 @@ private fun ActiveVideoPlayerCard(
 
             Box(
                 modifier = Modifier
-                    .heightIn(max = 260.dp)
-                    .aspectRatio(1f)
+                    .fillMaxWidth()
+                    .height(240.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(Color.Black)
                     .border(1.5.dp, WhatsAppNeonGreen.copy(alpha = 0.5f), RoundedCornerShape(18.dp)),
@@ -247,14 +247,20 @@ private fun ActiveVideoPlayerCard(
                                 mp.isLooping = true
                                 start()
                             }
+                            setOnErrorListener { _, _, _ ->
+                                // Prevent default framework AlertDialog crash on playback error
+                                true
+                            }
                         }
                     },
                     update = { videoView ->
-                        if (videoView.tag != video.file.absolutePath) {
-                            videoView.tag = video.file.absolutePath
-                            videoView.setVideoPath(video.file.absolutePath)
-                            videoView.start()
-                        }
+                        try {
+                            if (videoView.tag != video.file.absolutePath) {
+                                videoView.tag = video.file.absolutePath
+                                videoView.setVideoPath(video.file.absolutePath)
+                                videoView.start()
+                            }
+                        } catch (_: Throwable) {}
                     },
                     modifier = Modifier.fillMaxSize()
                 )
