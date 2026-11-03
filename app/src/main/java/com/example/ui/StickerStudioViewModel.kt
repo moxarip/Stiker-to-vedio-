@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 enum class MainStudioTab(val titleAr: String) {
     WHATSAPP_STICKERS("ملصقات واتساب"),
-    VIDEO_STUDIO("استوديو الفيديو"),
+    VIDEO_STUDIO("محول الصيغة"),
     EXPORTED_VIDEOS("الفيديوهات"),
     DEBUG_APK("نسخة Debug APK")
 }
@@ -211,23 +211,19 @@ class StickerStudioViewModel(application: Application) : AndroidViewModel(applic
 
     fun openSingleStickerInStudio(item: StickerItem) {
         _uiState.update { current ->
-            current.copy(
-                selectedStickers = listOf(item),
-                activeTab = MainStudioTab.VIDEO_STUDIO
-            )
+            current.copy(selectedStickers = listOf(item))
         }
+        convertToMp4Video()
     }
 
     fun openSelectedStickersInStudio() {
-        _uiState.update { current ->
-            val selected = current.selectedStickers.ifEmpty {
-                current.allStickers.take(1)
-            }
-            current.copy(
-                selectedStickers = selected,
-                activeTab = MainStudioTab.VIDEO_STUDIO
-            )
+        val selected = _uiState.value.selectedStickers.ifEmpty {
+            _uiState.value.allStickers.take(1)
         }
+        _uiState.update { current ->
+            current.copy(selectedStickers = selected)
+        }
+        convertToMp4Video()
     }
 
     fun toggleFavorite(item: StickerItem) {

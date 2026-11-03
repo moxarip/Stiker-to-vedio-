@@ -11,11 +11,14 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.net.Uri
-import android.os.Build
 import com.example.model.StickerItem
 import com.example.model.StickerSource
+import com.example.video.AnimatedStickerDecoder
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 object BuiltinStickerFactory {
 
@@ -26,112 +29,103 @@ object BuiltinStickerFactory {
         val symbolText: String,
         val primaryColor: Int,
         val secondaryColor: Int,
-        val accentColor: Int,
-        val isAnimatedTag: Boolean
+        val accentColor: Int
     )
 
     private val templates = listOf(
         StickerTemplate(
-            id = "sticker_fire_hype",
-            titleAr = "حماس ناري",
+            id = "anim_sticker_fire_hype",
+            titleAr = "ملصق حماس ناري متحرك",
             badgeTextAr = "عاش يا بطل!",
             symbolText = "🔥",
             primaryColor = Color.parseColor("#FF512F"),
             secondaryColor = Color.parseColor("#F09819"),
-            accentColor = Color.parseColor("#FFF176"),
-            isAnimatedTag = true
+            accentColor = Color.parseColor("#FFF176")
         ),
         StickerTemplate(
-            id = "sticker_laugh_joy",
-            titleAr = "ضحكة من القلب",
+            id = "anim_sticker_laugh_joy",
+            titleAr = "ملصق ضحكة متحرك",
             badgeTextAr = "ههههه رهيييب",
             symbolText = "😂",
             primaryColor = Color.parseColor("#00A884"),
             secondaryColor = Color.parseColor("#25D366"),
-            accentColor = Color.parseColor("#FFFFFF"),
-            isAnimatedTag = true
+            accentColor = Color.parseColor("#FFFFFF")
         ),
         StickerTemplate(
-            id = "sticker_neon_heart",
-            titleAr = "قلب متوهج",
+            id = "anim_sticker_neon_heart",
+            titleAr = "ملصق قلب نابض متحرك",
             badgeTextAr = "يسعد قلبك",
             symbolText = "❤️",
             primaryColor = Color.parseColor("#EC008C"),
             secondaryColor = Color.parseColor("#FC6767"),
-            accentColor = Color.parseColor("#FFD1DC"),
-            isAnimatedTag = true
+            accentColor = Color.parseColor("#FFD1DC")
         ),
         StickerTemplate(
-            id = "sticker_golden_cup",
-            titleAr = "كأس الصدارة",
+            id = "anim_sticker_golden_cup",
+            titleAr = "ملصق كأس الصدارة متحرك",
             badgeTextAr = "رقم واحد #1",
             symbolText = "🏆",
             primaryColor = Color.parseColor("#F7971E"),
             secondaryColor = Color.parseColor("#FFD200"),
-            accentColor = Color.parseColor("#FFF9C4"),
-            isAnimatedTag = false
+            accentColor = Color.parseColor("#FFF9C4")
         ),
         StickerTemplate(
-            id = "sticker_coffee_morning",
-            titleAr = "قهوة الصباح",
+            id = "anim_sticker_coffee_morning",
+            titleAr = "ملصق قهوة الصباح متحرك",
             badgeTextAr = "صباح الروقان",
             symbolText = "☕",
             primaryColor = Color.parseColor("#603813"),
             secondaryColor = Color.parseColor("#B29F94"),
-            accentColor = Color.parseColor("#FFF8E1"),
-            isAnimatedTag = false
+            accentColor = Color.parseColor("#FFF8E1")
         ),
         StickerTemplate(
-            id = "sticker_party_congrats",
-            titleAr = "ألف مبروك",
+            id = "anim_sticker_party_congrats",
+            titleAr = "ملصق ألف مبروك متحرك",
             badgeTextAr = "ألف مبروك!",
             symbolText = "🎉",
             primaryColor = Color.parseColor("#7F00FF"),
             secondaryColor = Color.parseColor("#E100FF"),
-            accentColor = Color.parseColor("#80D8FF"),
-            isAnimatedTag = true
+            accentColor = Color.parseColor("#80D8FF")
         ),
         StickerTemplate(
-            id = "sticker_super_like",
-            titleAr = "إعجاب أسطوري",
+            id = "anim_sticker_super_like",
+            titleAr = "ملصق إعجاب متحرك",
             badgeTextAr = "كفو والله",
             symbolText = "👍",
             primaryColor = Color.parseColor("#0083B0"),
             secondaryColor = Color.parseColor("#00B4DB"),
-            accentColor = Color.parseColor("#E0F7FA"),
-            isAnimatedTag = false
+            accentColor = Color.parseColor("#E0F7FA")
         ),
         StickerTemplate(
-            id = "sticker_star_magic",
-            titleAr = "نجوم الإبداع",
+            id = "anim_sticker_star_magic",
+            titleAr = "ملصق نجوم متحرك",
             badgeTextAr = "شغل فخم",
             symbolText = "✨",
             primaryColor = Color.parseColor("#1D976C"),
             secondaryColor = Color.parseColor("#93F9B9"),
-            accentColor = Color.parseColor("#FFFFFF"),
-            isAnimatedTag = true
+            accentColor = Color.parseColor("#FFFFFF")
         )
     )
 
     fun ensureBuiltinStickers(context: Context): List<StickerItem> {
-        val dir = File(context.filesDir, "builtin_stickers")
+        val dir = File(context.filesDir, "builtin_animated_stickers_v2")
         if (!dir.exists()) dir.mkdirs()
 
         val items = mutableListOf<StickerItem>()
         templates.forEachIndexed { index, tpl ->
             val file = File(dir, "${tpl.id}.webp")
             if (!file.exists() || file.length() == 0L) {
-                val bmp = renderStickerBitmap(tpl)
-                FileOutputStream(file).use { out ->
-                    @Suppress("DEPRECATION")
-                    val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        Bitmap.CompressFormat.WEBP_LOSSLESS
-                    } else {
-                        Bitmap.CompressFormat.WEBP
-                    }
-                    bmp.compress(format, 95, out)
+                val frames = (0 until 8).map { frameIdx ->
+                    renderAnimatedStickerFrame(tpl, frameIdx, totalFrames = 8)
                 }
-                bmp.recycle()
+                val animatedWebpBytes = AnimatedStickerDecoder.encodeFramesToAnimatedWebp(
+                    frames = frames,
+                    frameDurationMs = 90
+                )
+                FileOutputStream(file).use { out ->
+                    out.write(animatedWebpBytes)
+                }
+                frames.forEach { it.recycle() }
             }
             items.add(
                 StickerItem(
@@ -142,7 +136,7 @@ object BuiltinStickerFactory {
                     mimeType = "image/webp",
                     sizeBytes = file.length(),
                     lastModified = file.lastModified() + index * 1000L,
-                    isAnimated = tpl.isAnimatedTag,
+                    isAnimated = true,
                     isFavorite = index < 2
                 )
             )
@@ -150,63 +144,62 @@ object BuiltinStickerFactory {
         return items
     }
 
-    private fun renderStickerBitmap(tpl: StickerTemplate): Bitmap {
-        val size = 512
+    private fun renderAnimatedStickerFrame(
+        tpl: StickerTemplate,
+        frameIndex: Int,
+        totalFrames: Int
+    ): Bitmap {
+        val size = 384
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        val phase = (frameIndex.toFloat() / totalFrames.toFloat()) * 2f * PI.toFloat()
+        val pulse = 1f + 0.08f * sin(phase)
+        val bounceY = -12f * sin(phase)
+
         val cx = size / 2f
-        val cy = size / 2f - 28f
+        val cy = size / 2f - 20f + bounceY
+        val baseRadius = 128f * pulse
 
         // White sticker die-cut outline
         val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.FILL
-            setShadowLayer(16f, 0f, 6f, Color.argb(110, 0, 0, 0))
         }
-        canvas.drawCircle(cx, cy, 178f, outlinePaint)
+        canvas.drawCircle(cx, cy, baseRadius + 14f, outlinePaint)
 
         // Inner vibrant gradient circle
         val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
-                cx - 160f,
-                cy - 160f,
-                cx + 160f,
-                cy + 160f,
+                cx - baseRadius,
+                cy - baseRadius,
+                cx + baseRadius,
+                cy + baseRadius,
                 tpl.primaryColor,
                 tpl.secondaryColor,
                 Shader.TileMode.CLAMP
             )
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(cx, cy, 158f, fillPaint)
+        canvas.drawCircle(cx, cy, baseRadius, fillPaint)
 
-        // Decorative inner ring
-        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = tpl.accentColor
-            alpha = 110
-            style = Paint.Style.STROKE
-            strokeWidth = 6f
-        }
-        canvas.drawCircle(cx, cy, 138f, ringPaint)
+        // Animated orbiting stars inside the sticker itself
+        val starRadius = 14f + 4f * cos(phase)
+        drawStar(canvas, cx - 105f, cy - 95f + 6f * sin(phase), starRadius, tpl.accentColor)
+        drawStar(canvas, cx + 108f, cy - 82f - 6f * cos(phase), starRadius * 0.85f, Color.WHITE)
 
-        // Sparkle stars around sticker
-        drawStar(canvas, cx - 135f, cy - 125f, 18f, tpl.accentColor)
-        drawStar(canvas, cx + 140f, cy - 110f, 14f, Color.WHITE)
-        drawStar(canvas, cx - 145f, cy + 75f, 12f, Color.WHITE)
-
-        // Central emoji/symbol
+        // Central emoji/symbol animated inside the sticker
         val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
-            textSize = 148f
+            textSize = 108f * pulse
         }
         val fontMetrics = emojiPaint.fontMetrics
         val textOffset = (fontMetrics.descent + fontMetrics.ascent) / 2
         canvas.drawText(tpl.symbolText, cx, cy - textOffset, emojiPaint)
 
-        // Bottom sticker ribbon badge with white border
-        val ribbonRect = RectF(64f, 366f, 448f, 468f)
-        val ribbonOutlineRect = RectF(54f, 356f, 458f, 478f)
-        canvas.drawRoundRect(ribbonOutlineRect, 56f, 56f, outlinePaint)
+        // Bottom sticker ribbon badge
+        val ribbonRect = RectF(48f, 276f, 336f, 352f)
+        val ribbonOutlineRect = RectF(40f, 268f, 344f, 360f)
+        canvas.drawRoundRect(ribbonOutlineRect, 42f, 42f, outlinePaint)
 
         val ribbonFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
@@ -219,14 +212,13 @@ object BuiltinStickerFactory {
                 Shader.TileMode.CLAMP
             )
         }
-        canvas.drawRoundRect(ribbonRect, 48f, 48f, ribbonFillPaint)
+        canvas.drawRoundRect(ribbonRect, 36f, 36f, ribbonFillPaint)
 
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             textAlign = Paint.Align.CENTER
-            textSize = 46f
+            textSize = 34f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            setShadowLayer(6f, 0f, 3f, Color.argb(140, 0, 0, 0))
         }
         val labelMetrics = labelPaint.fontMetrics
         val labelOffset = (labelMetrics.descent + labelMetrics.ascent) / 2
@@ -240,9 +232,9 @@ object BuiltinStickerFactory {
         val inner = radius * 0.4f
         for (i in 0 until 8) {
             val r = if (i % 2 == 0) radius else inner
-            val angle = i * Math.PI / 4.0
-            val x = (cx + r * Math.cos(angle)).toFloat()
-            val y = (cy + r * Math.sin(angle)).toFloat()
+            val angle = i * PI / 4.0
+            val x = (cx + r * cos(angle)).toFloat()
+            val y = (cy + r * sin(angle)).toFloat()
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         path.close()

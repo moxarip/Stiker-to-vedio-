@@ -185,15 +185,17 @@ fun WhatsAppStickersScreen(
             }
         }
 
-        // Floating Multi-Sticker Selection & Convert Bar at Bottom
+        // Floating Direct Format Conversion Bar at Bottom
         AnimatedVisibility(
-            visible = uiState.selectedStickers.isNotEmpty(),
+            visible = uiState.selectedStickers.isNotEmpty() || uiState.isEncodingVideo,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             SelectedStickersActionBar(
                 selectedCount = uiState.selectedStickers.size,
+                isEncoding = uiState.isEncodingVideo,
+                encodingProgress = uiState.encodingProgress,
                 onOpenStudio = onOpenSelectedInStudio
             )
         }
@@ -763,6 +765,8 @@ private fun EmptyStickersCard(
 @Composable
 private fun SelectedStickersActionBar(
     selectedCount: Int,
+    isEncoding: Boolean,
+    encodingProgress: Float,
     onOpenStudio: () -> Unit
 ) {
     Surface(
@@ -782,17 +786,19 @@ private fun SelectedStickersActionBar(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (selectedCount == 1) {
-                        "تم تحديد ملصق واحد للتحويل"
+                    text = if (isEncoding) {
+                        "جاري تحويل الصيغة إلى MP4 (${(encodingProgress * 100).toInt()}%)..."
+                    } else if (selectedCount == 1) {
+                        "تحويل مباشر لصيغة الملصق المتحرك"
                     } else {
-                        "تم تحديد $selectedCount ملصقات (فيديو متتابع)"
+                        "تحويل مباشر لـ $selectedCount ملصقات إلى MP4"
                     },
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "اضغط على أي ملصق إضافي لدمجه في نفس الفيديو",
+                    text = "تحويل خام (WebP/GIF ➔ MP4) بدون أي تعديل أو إضافات",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -802,6 +808,7 @@ private fun SelectedStickersActionBar(
 
             Button(
                 onClick = onOpenStudio,
+                enabled = !isEncoding,
                 modifier = Modifier
                     .height(48.dp)
                     .testTag("open_selected_in_studio_button"),
@@ -818,7 +825,7 @@ private fun SelectedStickersActionBar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "تخصيص وتحويل MP4",
+                    text = if (isEncoding) "جاري التحويل..." else "تحويل إلى MP4",
                     style = MaterialTheme.typography.labelLarge
                 )
             }

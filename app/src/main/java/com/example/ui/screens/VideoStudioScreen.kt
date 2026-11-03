@@ -7,12 +7,9 @@ import android.graphics.PorterDuff
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,34 +18,25 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MovieCreation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -68,18 +55,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.example.model.MotionEffect
-import com.example.model.ParticleOverlay
 import com.example.model.StickerItem
-import com.example.model.VideoAspectRatio
-import com.example.model.VideoBackgroundStyle
 import com.example.model.VideoStudioConfig
 import com.example.ui.StickerStudioUiState
 import com.example.ui.theme.CyberTeal
 import com.example.ui.theme.StudioCard
 import com.example.ui.theme.StudioCardElevated
-import com.example.ui.theme.WhatsAppEmerald
 import com.example.ui.theme.WhatsAppNeonGreen
 import com.example.video.LoadedStickerAsset
 import com.example.video.StickerVideoEncoder
@@ -91,8 +72,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun VideoStudioScreen(
     uiState: StickerStudioUiState,
-    onUpdateConfig: ((VideoStudioConfig) -> VideoStudioConfig) -> Unit,
-    onRemoveStickerFromSelection: (StickerItem) -> Unit,
+    @Suppress("UNUSED_PARAMETER") onUpdateConfig: ((VideoStudioConfig) -> VideoStudioConfig) -> Unit,
+    @Suppress("UNUSED_PARAMETER") onRemoveStickerFromSelection: (StickerItem) -> Unit,
     onAddMoreStickersClick: () -> Unit,
     onStartEncodingMp4: () -> Unit
 ) {
@@ -104,34 +85,32 @@ fun VideoStudioScreen(
     var isPreviewPlaying by remember { mutableStateOf(true) }
     var previewTimeSec by remember { mutableFloatStateOf(0f) }
 
-    // Load selected sticker bitmaps safely on IO thread
     LaunchedEffect(selectedStickers) {
         loadedAssets = withContext(Dispatchers.IO) {
             selectedStickers.mapNotNull { StickerVideoEncoder.loadStickerAsset(context, it) }
         }
     }
 
-    // Smooth 30fps preview loop using delay(33L) so tests and UI never block or hang waitForIdle()
-    LaunchedEffect(isPreviewPlaying, config.durationSeconds, uiState.isEncodingVideo) {
+    val totalLoopDurationSec = remember(loadedAssets) {
+        val ms = loadedAssets.sumOf { it.totalDurationMs }.coerceAtLeast(1000)
+        ms / 1000f
+    }
+
+    LaunchedEffect(isPreviewPlaying, totalLoopDurationSec, uiState.isEncodingVideo) {
         if (!isPreviewPlaying || uiState.isEncodingVideo) return@LaunchedEffect
         while (isActive) {
-            delay(33L)
-            val totalDur = config.durationSeconds.coerceAtLeast(1).toFloat()
-            previewTimeSec = (previewTimeSec + 0.033f) % totalDur
+            delay(40L)
+            previewTimeSec = (previewTimeSec + 0.04f) % totalLoopDurationSec.coerceAtLeast(0.5f)
         }
     }
 
-    // Reuse a single offscreen software Bitmap per aspect ratio to avoid per-frame allocations
-    val offscreenBuffer = remember(config.aspectRatio) {
-        val previewW = (config.aspectRatio.widthPx / 2).coerceAtLeast(240)
-        val previewH = (config.aspectRatio.heightPx / 2).coerceAtLeast(240)
-        Bitmap.createBitmap(previewW, previewH, Bitmap.Config.ARGB_8888)
+    val offscreenBuffer = remember {
+        Bitmap.createBitmap(384, 384, Bitmap.Config.ARGB_8888)
     }
 
     val previewBitmap = remember(
         offscreenBuffer,
         loadedAssets,
-        config,
         previewTimeSec
     ) {
         val softCanvas = AndroidCanvas(offscreenBuffer)
@@ -143,10 +122,12 @@ fun VideoStudioScreen(
             assets = loadedAssets,
             config = config,
             timeSeconds = previewTimeSec,
-            totalDurationSeconds = config.durationSeconds.toFloat()
+            totalDurationSeconds = totalLoopDurationSec
         )
         offscreenBuffer.asImageBitmap()
     }
+
+    val primaryAsset = loadedAssets.firstOrNull()
 
     Column(
         modifier = Modifier
@@ -156,7 +137,7 @@ fun VideoStudioScreen(
             .testTag("video_studio_screen"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Live Interactive Studio Preview Card
+        // Pure Format Conversion Preview Card (WebP / GIF -> MP4 without any modification)
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -165,7 +146,7 @@ fun VideoStudioScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
@@ -175,521 +156,179 @@ fun VideoStudioScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            imageVector = Icons.Default.SwapHoriz,
                             contentDescription = null,
                             tint = WhatsAppNeonGreen,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "معاينة حية للفيديو (${config.aspectRatio.badgeText})",
+                            text = "تحويل الصيغة المباشر (WebP / GIF ➔ MP4)",
                             style = MaterialTheme.typography.titleMedium,
-                            color = Color.White
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
                         )
                     }
 
-                    Surface(
-                        color = StudioCardElevated,
-                        shape = RoundedCornerShape(10.dp)
+                    IconButton(
+                        onClick = { isPreviewPlaying = !isPreviewPlaying },
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${"%.1f".format(previewTimeSec)}s / ${config.durationSeconds}s",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = CyberTeal
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            IconButton(
-                                onClick = { isPreviewPlaying = !isPreviewPlaying },
-                                modifier = Modifier.size(26.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = if (isPreviewPlaying) "إيقاف مؤقت" else "تشغيل المعاينة",
-                                    tint = WhatsAppNeonGreen,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPreviewPlaying) "إيقاف مؤقت" else "تشغيل",
+                            tint = WhatsAppNeonGreen
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "يتم استخراج جميع إطارات الملصق المتحرك الأصلية وتحويلها كما هي تماماً إلى صيغة فيديو MP4 بدون أي تعديل أو إضافات.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(260.dp)
+                        .size(240.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFF060D10))
+                        .background(Color.Black)
                         .border(1.5.dp, WhatsAppNeonGreen.copy(alpha = 0.45f), RoundedCornerShape(18.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         bitmap = previewBitmap,
-                        contentDescription = "معاينة الفيديو",
+                        contentDescription = "معاينة الملصق المتحرك الأصلي",
                         modifier = Modifier
                             .fillMaxSize()
                             .testTag("studio_preview_canvas"),
                         contentScale = ContentScale.Fit
                     )
                 }
-            }
-        }
 
-        // 2. Primary Convert & Export MP4 Action Card (with live progress bar)
-        ExportMp4ActionCard(
-            isEncoding = uiState.isEncodingVideo,
-            progress = uiState.encodingProgress,
-            stickerCount = selectedStickers.size,
-            config = config,
-            onStartEncoding = onStartEncodingMp4
-        )
+                Spacer(modifier = Modifier.height(14.dp))
 
-        // 3. Selected Stickers Sequence Strip
-        SelectedStickersStripCard(
-            stickers = selectedStickers,
-            onRemoveSticker = onRemoveStickerFromSelection,
-            onAddMoreClick = onAddMoreStickersClick
-        )
-
-        // 4. Motion Effect Selector
-        StudioSectionCard(title = "حركة الملصق داخل الفيديو") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MotionEffect.entries.forEach { effect ->
-                    val selected = config.motionEffect == effect
-                    Surface(
-                        modifier = Modifier
-                            .width(142.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { onUpdateConfig { it.copy(motionEffect = effect) } }
-                            .border(
-                                width = if (selected) 2.dp else 1.dp,
-                                color = if (selected) WhatsAppNeonGreen else Color.Transparent,
-                                shape = RoundedCornerShape(16.dp)
-                            ),
-                        shape = RoundedCornerShape(16.dp),
-                        color = if (selected) StudioCardElevated else Color(0xFF101D24)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = effect.titleAr,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = if (selected) WhatsAppNeonGreen else Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = effect.subtitleAr,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5. Video Aspect Ratio & Duration Selector
-        StudioSectionCard(title = "أبعاد الفيديو والمدة الزمنية") {
-            Text(
-                text = "مقاس الفيديو:",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                VideoAspectRatio.entries.forEach { ratio ->
-                    val selected = config.aspectRatio == ratio
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onUpdateConfig { it.copy(aspectRatio = ratio) } },
-                        label = {
-                            Text(
-                                text = "${ratio.badgeText} • ${ratio.titleAr}",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = WhatsAppEmerald,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "مدة الفيديو (بالثواني):",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(3, 4, 6, 8, 10).forEach { sec ->
-                        val selected = config.durationSeconds == sec
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onUpdateConfig { it.copy(durationSeconds = sec) } },
-                            label = { Text("${sec}s") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = WhatsAppNeonGreen,
-                                selectedLabelColor = Color(0xFF042112)
-                            )
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "سرعة الحركة:",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0.75f to "0.75x", 1.0f to "1x", 1.5f to "1.5x", 2.0f to "2x").forEach { (spd, label) ->
-                        val selected = config.speedMultiplier == spd
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onUpdateConfig { it.copy(speedMultiplier = spd) } },
-                            label = { Text(label) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = CyberTeal,
-                                selectedLabelColor = Color(0xFF00262B)
-                            )
-                        )
-                    }
-                }
-            }
-        }
-
-        // 6. Background Style & Particle Overlay Selector
-        StudioSectionCard(title = "خلفية الفيديو والمؤثرات البصرية") {
-            Text(
-                text = "خلفية الفيديو:",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                VideoBackgroundStyle.entries.forEach { bg ->
-                    val selected = config.backgroundStyle == bg
+                // Technical format specification summary
+                Surface(
+                    color = Color(0xFF0B141A),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { onUpdateConfig { it.copy(backgroundStyle = bg) } }
-                            .padding(6.dp)
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(bg.primaryColorHex), Color(bg.secondaryColorHex))
-                                    )
-                                )
-                                .border(
-                                    width = if (selected) 3.dp else 1.dp,
-                                    color = if (selected) WhatsAppNeonGreen else Color.White.copy(alpha = 0.3f),
-                                    shape = CircleShape
-                                )
+                        FormatInfoRow(
+                            label = "الملف المحدد:",
+                            value = primaryAsset?.item?.name ?: "لم يتم التحديد"
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = bg.titleAr,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (selected) WhatsAppNeonGreen else Color.White
+                        FormatInfoRow(
+                            label = "الصيغة الأصلية:",
+                            value = if (primaryAsset?.isAnimated == true) "ملصق متحرك أصلي (Animated WebP / GIF)" else "ملصق WebP"
+                        )
+                        FormatInfoRow(
+                            label = "عدد الإطارات الأصلية:",
+                            value = "${primaryAsset?.frameCount ?: 1} إطار أصلي"
+                        )
+                        FormatInfoRow(
+                            label = "الأبعاد الأصلية:",
+                            value = "${primaryAsset?.width ?: 512} × ${primaryAsset?.height ?: 512} بكسل"
+                        )
+                        FormatInfoRow(
+                            label = "الصيغة الناتجة:",
+                            value = "فيديو MP4 (H.264 AVC) خام بدون أي تعديل"
                         )
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "مؤثرات الجزيئات المتطايرة:",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ParticleOverlay.entries.forEach { particle ->
-                    FilterChip(
-                        selected = config.particleOverlay == particle,
-                        onClick = { onUpdateConfig { it.copy(particleOverlay = particle) } },
-                        label = { Text(particle.titleAr) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = WhatsAppEmerald,
-                            selectedLabelColor = Color.White
-                        )
-                    )
-                }
-            }
         }
 
-        // 7. Custom Caption Text & Sticker Glow Toggle
-        StudioSectionCard(title = "كتابة نص على الفيديو والتوهج") {
-            OutlinedTextField(
-                value = config.captionText,
-                onValueChange = { newText ->
-                    onUpdateConfig { it.copy(captionText = newText.take(40)) }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("video_caption_input"),
-                label = { Text("نص إضافي يظهر أسفل الفيديو (اختياري)") },
-                placeholder = { Text("مثال: جمعة مباركة، صباح الخير، عاش يا بطل...") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = WhatsAppNeonGreen,
-                    unfocusedBorderColor = Color(0xFF283C48)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "هالة ضوئية حول الملصق",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "إبراز الملصق بتوهج ناعم يتفاعل مع الحركة",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = config.showStickerGlowBorder,
-                    onCheckedChange = { checked ->
-                        onUpdateConfig { it.copy(showStickerGlowBorder = checked) }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF042112),
-                        checkedTrackColor = WhatsAppNeonGreen
-                    )
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-    }
-}
-
-@Composable
-private fun ExportMp4ActionCard(
-    isEncoding: Boolean,
-    progress: Float,
-    stickerCount: Int,
-    config: VideoStudioConfig,
-    onStartEncoding: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = StudioCardElevated)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            if (isEncoding) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "جاري تحويل الملصقات إلى فيديو MP4...",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = WhatsAppNeonGreen
-                    )
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(5.dp)),
-                    color = WhatsAppNeonGreen,
-                    trackColor = Color(0xFF0E1B22)
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "يتم ترميز الإطارات بدقة ${config.aspectRatio.widthPx}x${config.aspectRatio.heightPx} بمعدل ${config.fps} إطار/ثانية (H.264 AVC)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Button(
-                    onClick = onStartEncoding,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("start_mp4_encoding_button"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = WhatsAppNeonGreen,
-                        contentColor = Color(0xFF042112)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MovieCreation,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (stickerCount > 1) {
-                            "تحويل وتصدير الفيديو ($stickerCount ملصقات • MP4)"
-                        } else {
-                            "تحويل الملصق إلى فيديو (MP4)"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SelectedStickersStripCard(
-    stickers: List<StickerItem>,
-    onRemoveSticker: (StickerItem) -> Unit,
-    onAddMoreClick: () -> Unit
-) {
-    StudioSectionCard(title = "الملصقات المدمجة في الفيديو (${stickers.size})") {
-        LazyRow(
-            contentPadding = PaddingValues(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Direct Conversion Action Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = StudioCardElevated)
         ) {
-            itemsIndexed(stickers, key = { idx, item -> "${item.id}_$idx" }) { index, sticker ->
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFF101D24))
-                        .border(1.dp, WhatsAppNeonGreen.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                ) {
-                    AsyncImage(
-                        model = sticker.uri,
-                        contentDescription = sticker.name,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(4.dp)
-                            .size(20.dp)
-                            .clip(CircleShape)
-                            .background(WhatsAppEmerald),
-                        contentAlignment = Alignment.Center
+            Column(modifier = Modifier.padding(16.dp)) {
+                if (uiState.isEncodingVideo) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${index + 1}",
-                            style = MaterialTheme.typography.labelMedium,
+                            text = "جاري تحويل صيغة الملصق المتحرك إلى MP4...",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = WhatsAppNeonGreen
+                        )
+                        Text(
+                            text = "${(uiState.encodingProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    LinearProgressIndicator(
+                        progress = { uiState.encodingProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(5.dp)),
+                        color = WhatsAppNeonGreen,
+                        trackColor = Color(0xFF0E1B22)
+                    )
+                } else {
+                    Button(
+                        onClick = onStartEncodingMp4,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .testTag("start_mp4_encoding_button"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WhatsAppNeonGreen,
+                            contentColor = Color(0xFF042112)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MovieCreation,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "تحويل الصيغة إلى MP4 الآن (بدون تعديل)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = onAddMoreStickersClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            tint = CyberTeal,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "اختيار ملصق آخر من ملصقات واتساب",
                             color = Color.White
                         )
                     }
-                    if (stickers.size > 1) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(3.dp)
-                                .size(20.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xCC000000))
-                                .clickable { onRemoveSticker(sticker) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "إزالة",
-                                tint = Color.White,
-                                modifier = Modifier.size(13.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(StudioCardElevated)
-                        .border(1.dp, CyberTeal.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .clickable { onAddMoreClick() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "إضافة ملصق",
-                            tint = CyberTeal
-                        )
-                        Text(
-                            text = "إضافة",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = CyberTeal
-                        )
-                    }
                 }
             }
         }
@@ -697,24 +336,20 @@ private fun SelectedStickersStripCard(
 }
 
 @Composable
-private fun StudioSectionCard(
-    title: String,
-    content: @Composable () -> Unit
-) {
-    Card(
+private fun FormatInfoRow(label: String, value: String) {
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = StudioCard)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            content()
-        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            color = CyberTeal
+        )
     }
 }
